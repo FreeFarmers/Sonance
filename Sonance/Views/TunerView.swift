@@ -49,9 +49,9 @@ struct TunerView: View {
                         }
 
                         // Needle
-                        Capsule()
+                        NeedleShapeWithRoundedBase()
                             .fill(Color.red)
-                            .frame(width: 2, height: 150)
+                            .frame(width: 6, height: 150)
                             .offset(y: -geometry.size.width * 0.4 / 2.0 + 10)
                             .rotationEffect(.degrees(detectedNote.offset * 180.0 / 100.0))
                             .animation(.easeInOut, value: detectedNote.offset)
@@ -108,5 +108,40 @@ struct ArcShape: Shape {
         path.addArc(center: center, radius: radius, startAngle: startAngle, endAngle: endAngle, clockwise: false)
         
         return path
+    }
+}
+
+
+
+
+import SwiftUI
+
+struct TunerNeedle: View {
+    var detectedOffset: Double // -50 to +50 cents
+
+    var body: some View {
+        GeometryReader { geometry in
+            ZStack {
+                // Circular Base
+                Circle()
+                    .fill(Color.black)
+                    .frame(width: 12, height: 12)
+                    .offset(y: 75) // Adjust based on needle size
+                
+                // Needle
+                Path { path in
+                    let width: CGFloat = 4
+                    let height: CGFloat = 150
+                    path.move(to: CGPoint(x: 0, y: height)) // Bottom
+                    path.addLine(to: CGPoint(x: width / 2, y: 0)) // Top point
+                    path.addLine(to: CGPoint(x: -width / 2, y: 0)) // Top point other side
+                    path.closeSubpath()
+                }
+                .fill(Color.red)
+                .rotationEffect(.degrees(detectedOffset * 90.0 / 50.0), anchor: .bottom)
+                .animation(.easeInOut, value: detectedOffset)
+            }
+            .frame(width: geometry.size.width, height: geometry.size.height)
+        }
     }
 }
