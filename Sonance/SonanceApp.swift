@@ -11,7 +11,7 @@ import SwiftUI
 struct SonanceApp: App {
     var body: some Scene {
         WindowGroup {
-            TunerView()
+            TunerView(audioAnalyzer: AudioAnalyzer())
         }
     }
 }

@@ -7,71 +7,106 @@
 
 import SwiftUI
 
-struct TunerView: View {
-    @ObservedObject var audioAnalyzer = AudioAnalyzer()
 
+struct TunerView: View {
+    @ObservedObject var audioAnalyzer: AudioAnalyzer // Use your existing AudioAnalyzer
+    
     var detectedNote: (note: String, offset: Double) {
         return frequencyToNote(frequency: audioAnalyzer.frequency)
     }
+    var tuningColor: Color {
+        if abs(detectedNote.offset) > 15 {
+            return .snRED
+        } else if abs(detectedNote.offset) > 5 {
+            return .snOrange
+        } else {
+            return Color.accentColor
+        }
+    }
 
+    
     var body: some View {
         VStack {
             GeometryReader { geometry in
                 VStack {
-                    Spacer()
                     ZStack {
-                        // Gauge Background
-                        RoundedRectangle(cornerRadius: 10)
-                            .fill(Color.gray.opacity(0.3))
-                            .frame(width: geometry.size.width * 0.8, height: 50)
+                        // Curved Gauge Background
+                        ArcShape(angle: 180)
+                            .stroke(Color.gray.opacity(0.3), lineWidth: 10)
+                            .frame(width: geometry.size.width, height: geometry.size.height * 0.38) // Adjust height
 
-                        // Tick Marks
-                        HStack(spacing: 0) {
-                            ForEach(-5...5, id: \.self) { i in
-                                Rectangle()
-                                    .fill(Color.gray)
-                                    .frame(width: 1, height: i % 5 == 0 ? 15 : 8)
-                                    .frame(maxWidth: .infinity)
-                            }
+                        // Tick Marks (Curved)
+                        ForEach(-5...5, id: \.self) { i in
+                            let angle = Double(i) * 180.0 / 10.0 // Calculate angle for each tick
+                            let tickHeight = i % 5 == 0 ? 15.0 : 8.0 // Longer ticks at 0, ±5
+                            let radius = geometry.size.width * 0.38// Adjust radius to fit inside arc
+
+                            Rectangle()
+                                .fill(Color.white)
+                                .frame(width: 2, height: tickHeight)
+                                .offset(y: -radius) // Move inward into the arc
+                                .rotationEffect(.degrees(angle), anchor: .center)
                         }
-                        .frame(width: geometry.size.width * 0.8, height: 50)
 
                         // Needle
-                        Rectangle()
+                        Capsule()
                             .fill(Color.red)
-                            .frame(width: 3, height: 40)
-                            .offset(x: CGFloat(detectedNote.offset) * geometry.size.width * 0.8 / 200, y: -5)
+                            .frame(width: 2, height: 150)
+                            .offset(y: -geometry.size.width * 0.4 / 2.0 + 10)
+                            .rotationEffect(.degrees(detectedNote.offset * 180.0 / 100.0))
                             .animation(.easeInOut, value: detectedNote.offset)
                     }
+                    .padding(.top,100)
 
-                    Text("Note: \(detectedNote.note)")
-                        .font(.title)
-                        .padding(.top, 10)
+                    
+                    Text("\(detectedNote.note)")
+                        .font(.system(size: 40, weight: .bold, design: .rounded))
+                        .foregroundStyle(Color.white)
 
                     Text("\(detectedNote.offset, specifier: "%.1f") cents")
-                        .font(.headline)
+                        .font(.system(size: 18, weight: .semibold, design: .rounded))
+                        .foregroundStyle(Color.white)
                         .padding(.top, 5)
-
+                    
                     Spacer()
                 }
                 .frame(maxWidth: .infinity)
             }
         }
+        .background(tuningColor) // Apply dynamic background color
     }
-
+    
     func frequencyToNote(frequency: Double) -> (String, Double) {
         let noteNames = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
-
+        
         guard frequency > 0 else { return ("", 0) }
-
+        
         let midiNote = 69 + 12 * log2(frequency / 440.0)
         let roundedNote = Int(round(midiNote))
         let noteIndex = roundedNote % 12
         let noteName = noteNames[noteIndex]
-
+        
         let offset = (midiNote - Double(roundedNote)) * 100.0
-
+        
         return (noteName, offset)
     }
 }
 
+// MARK: - Arc Shape
+struct ArcShape: Shape {
+    var angle: Double
+    
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        
+        let center = CGPoint(x: rect.midX, y: rect.midY)
+        let radius = min(rect.width, rect.height) / 2
+        
+        let startAngle = Angle(degrees: 180) // Start from the left
+        let endAngle = Angle(degrees: 180 + angle)   //add the angle to the starting angle.
+        
+        path.addArc(center: center, radius: radius, startAngle: startAngle, endAngle: endAngle, clockwise: false)
+        
+        return path
+    }
+}
