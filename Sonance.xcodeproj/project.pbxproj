@@ -49,14 +49,6 @@
 		5D9A216F2D95878C000F0EC2 /* Sonance Watch Watch App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Sonance Watch Watch App.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
-/* Begin PBXFileSystemSynchronizedRootGroup section */
-		5D9A21702D95878C000F0EC2 /* Sonance Watch Watch App */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			path = "Sonance Watch Watch App";
-			sourceTree = "<group>";
-		};
-/* End PBXFileSystemSynchronizedRootGroup section */
-
 /* Begin PBXFrameworksBuildPhase section */
 		5D9A21502D9568BA000F0EC2 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
@@ -79,7 +71,6 @@
 			isa = PBXGroup;
 			children = (
 				5D9A21642D9568CE000F0EC2 /* Sonance */,
-				5D9A21702D95878C000F0EC2 /* Sonance Watch Watch App */,
 				5D9A21542D9568BA000F0EC2 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -156,9 +147,6 @@
 			buildRules = (
 			);
 			dependencies = (
-			);
-			fileSystemSynchronizedGroups = (
-				5D9A21702D95878C000F0EC2 /* Sonance Watch Watch App */,
 			);
 			name = "Sonance Watch Watch App";
 			packageProductDependencies = (
