@@ -12,6 +12,7 @@
 		5D9A215E2D9568BB000F0EC2 /* Preview Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 5D9A215D2D9568BB000F0EC2 /* Preview Assets.xcassets */; };
 		5D9A21672D956A80000F0EC2 /* BVAudioAnalyzer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D9A21662D956A60000F0EC2 /* BVAudioAnalyzer.swift */; };
 		5D9A216A2D956B11000F0EC2 /* TunerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D9A21692D956B11000F0EC2 /* TunerView.swift */; };
+		5D9A21822D95B2C5000F0EC2 /* BVCustomTunerNeedleView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D9A21812D95B2C5000F0EC2 /* BVCustomTunerNeedleView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -21,6 +22,7 @@
 		5D9A215D2D9568BB000F0EC2 /* Preview Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = "Preview Assets.xcassets"; sourceTree = "<group>"; };
 		5D9A21662D956A60000F0EC2 /* BVAudioAnalyzer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BVAudioAnalyzer.swift; sourceTree = "<group>"; };
 		5D9A21692D956B11000F0EC2 /* TunerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TunerView.swift; sourceTree = "<group>"; };
+		5D9A21812D95B2C5000F0EC2 /* BVCustomTunerNeedleView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BVCustomTunerNeedleView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -74,6 +76,7 @@
 			isa = PBXGroup;
 			children = (
 				5D9A21692D956B11000F0EC2 /* TunerView.swift */,
+				5D9A21812D95B2C5000F0EC2 /* BVCustomTunerNeedleView.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -153,6 +156,7 @@
 			files = (
 				5D9A21672D956A80000F0EC2 /* BVAudioAnalyzer.swift in Sources */,
 				5D9A21572D9568BA000F0EC2 /* SonanceApp.swift in Sources */,
+				5D9A21822D95B2C5000F0EC2 /* BVCustomTunerNeedleView.swift in Sources */,
 				5D9A216A2D956B11000F0EC2 /* TunerView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
