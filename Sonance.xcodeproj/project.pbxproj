@@ -7,15 +7,18 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		5D95D5882EEAB4B70070366D /* TunerConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D95D5872EEAB4B70070366D /* TunerConfig.swift */; };
 		5D9A21572D9568BA000F0EC2 /* SonanceApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D9A21562D9568BA000F0EC2 /* SonanceApp.swift */; };
 		5D9A215B2D9568BB000F0EC2 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 5D9A215A2D9568BB000F0EC2 /* Assets.xcassets */; };
 		5D9A215E2D9568BB000F0EC2 /* Preview Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 5D9A215D2D9568BB000F0EC2 /* Preview Assets.xcassets */; };
 		5D9A21672D956A80000F0EC2 /* BVAudioAnalyzer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D9A21662D956A60000F0EC2 /* BVAudioAnalyzer.swift */; };
 		5D9A216A2D956B11000F0EC2 /* TunerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D9A21692D956B11000F0EC2 /* TunerView.swift */; };
 		5D9A21822D95B2C5000F0EC2 /* BVCustomTunerNeedleView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D9A21812D95B2C5000F0EC2 /* BVCustomTunerNeedleView.swift */; };
+		5D9A21842D96B428000F0EC2 /* ArcShape.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D9A21832D96B428000F0EC2 /* ArcShape.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		5D95D5872EEAB4B70070366D /* TunerConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TunerConfig.swift; sourceTree = "<group>"; };
 		5D9A21532D9568BA000F0EC2 /* Sonance.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Sonance.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		5D9A21562D9568BA000F0EC2 /* SonanceApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SonanceApp.swift; sourceTree = "<group>"; };
 		5D9A215A2D9568BB000F0EC2 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -23,6 +26,7 @@
 		5D9A21662D956A60000F0EC2 /* BVAudioAnalyzer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BVAudioAnalyzer.swift; sourceTree = "<group>"; };
 		5D9A21692D956B11000F0EC2 /* TunerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TunerView.swift; sourceTree = "<group>"; };
 		5D9A21812D95B2C5000F0EC2 /* BVCustomTunerNeedleView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BVCustomTunerNeedleView.swift; sourceTree = "<group>"; };
+		5D9A21832D96B428000F0EC2 /* ArcShape.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArcShape.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -67,6 +71,7 @@
 		5D9A21652D956A53000F0EC2 /* Utils */ = {
 			isa = PBXGroup;
 			children = (
+				5D95D5872EEAB4B70070366D /* TunerConfig.swift */,
 				5D9A21662D956A60000F0EC2 /* BVAudioAnalyzer.swift */,
 			);
 			path = Utils;
@@ -76,6 +81,7 @@
 			isa = PBXGroup;
 			children = (
 				5D9A21692D956B11000F0EC2 /* TunerView.swift */,
+				5D9A21832D96B428000F0EC2 /* ArcShape.swift */,
 				5D9A21812D95B2C5000F0EC2 /* BVCustomTunerNeedleView.swift */,
 			);
 			path = Views;
@@ -154,7 +160,9 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				5D95D5882EEAB4B70070366D /* TunerConfig.swift in Sources */,
 				5D9A21672D956A80000F0EC2 /* BVAudioAnalyzer.swift in Sources */,
+				5D9A21842D96B428000F0EC2 /* ArcShape.swift in Sources */,
 				5D9A21572D9568BA000F0EC2 /* SonanceApp.swift in Sources */,
 				5D9A21822D95B2C5000F0EC2 /* BVCustomTunerNeedleView.swift in Sources */,
 				5D9A216A2D956B11000F0EC2 /* TunerView.swift in Sources */,

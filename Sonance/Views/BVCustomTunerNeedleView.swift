@@ -7,38 +7,8 @@
 
 import SwiftUI
 
-
-struct Triangle: Shape {
-    func path(in rect: CGRect) -> Path {
-        Path { path in
-            path.move(to: CGPoint(x: rect.midX, y: rect.minY))
-            path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
-            path.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))
-            path.addLine(to: CGPoint(x: rect.midX, y: rect.minY))
-
-        }
-    }
-}
-
-
-
-
-struct ArcSample:Shape{
-    func path(in rect: CGRect) -> Path {
-        Path{ path in
-            path.move(to: CGPoint(x: rect.midX, y: rect.midY))
-            path.addArc(
-                center: CGPoint(x: rect.midX, y: rect.midY),
-                radius: rect.height/2,
-                startAngle: Angle(degrees: -20),
-                endAngle: Angle(degrees: +20),
-                clockwise: true)
-
-        }
-    }
-}
-
-
+/// Custom needle shape with a tapered body and rounded base
+/// Used for the tuner indicator that shows pitch offset
 struct NeedleShapeWithRoundedBase: Shape {
     func path(in rect: CGRect) -> Path {
         Path { path in
@@ -50,29 +20,35 @@ struct NeedleShapeWithRoundedBase: Shape {
             let baseRadius = baseWidth / 2
             let leftBaseX = baseCenterX - baseRadius
             let rightBaseX = baseCenterX + baseRadius
-
+            
+            // Draw tapered needle from tip to base
             path.move(to: CGPoint(x: tipX, y: tipY))
             path.addLine(to: CGPoint(x: rightBaseX, y: baseY - baseRadius))
-            path.addArc(center: CGPoint(x: baseCenterX, y: baseY - baseRadius), radius: baseRadius, startAngle: Angle(degrees: 0), endAngle: Angle(degrees: 180), clockwise: false)
+            
+            // Add rounded base
+            path.addArc(
+                center: CGPoint(x: baseCenterX, y: baseY - baseRadius),
+                radius: baseRadius,
+                startAngle: Angle(degrees: 0),
+                endAngle: Angle(degrees: 180),
+                clockwise: false
+            )
+            
             path.addLine(to: CGPoint(x: leftBaseX, y: baseY - baseRadius))
             path.closeSubpath()
         }
     }
 }
 
-
-struct BVCustomTunerNeedleView: View {
-    var body: some View {
-        ZStack{
-            
-            NeedleShapeWithRoundedBase()
-                .frame(width: 2, height: 150)
-                //.background(Color.green)
-        
-        }
-    }
-}
-
 #Preview {
-    BVCustomTunerNeedleView()
+    VStack {
+        NeedleShapeWithRoundedBase()
+            .fill(Color.red)
+            .frame(width: 20, height: 150)
+        
+        NeedleShapeWithRoundedBase()
+            .stroke(Color.blue, lineWidth: 2)
+            .frame(width: 30, height: 200)
+    }
+    .padding()
 }
