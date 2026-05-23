@@ -8,104 +8,342 @@
 import AVFoundation
 import Accelerate
 
-class AudioAnalyzer: ObservableObject {
-    private var audioEngine: AVAudioEngine!
-    private var inputNode: AVAudioInputNode!
-
-    @Published var frequency: Double = 0.0
-
-    init() {
-        setupAudioEngine()
+/// Detected note information including note name, octave, and cent offset
+struct DetectedNote: Equatable {
+    let note: String
+    let octave: Int
+    let offset: Double
+    let frequency: Double
+    
+    static let empty = DetectedNote(note: "", octave: 0, offset: 0, frequency: 0)
+    
+    var displayName: String {
+        note.isEmpty ? "" : "\(note)\(octave)"
     }
+    
+    var isDetected: Bool {
+        !note.isEmpty && frequency > 0
+    }
+}
 
+/// Audio analyzer that detects pitch from microphone input using FFT
+class AudioAnalyzer: ObservableObject {
+    private var audioEngine: AVAudioEngine?
+    private var inputNode: AVAudioInputNode?
+    private var fftSetup: FFTSetup?
+    private var log2n: vDSP_Length = 0
+    private var bufferSizePOT: Int = 0
+    
+    @Published var frequency: Double = 0.0
+    @Published var isRunning: Bool = false
+    @Published var permissionGranted: Bool = false
+    @Published var amplitude: Float = 0.0
+    
+    var detectedNote: DetectedNote {
+        return frequencyToNote(frequency: frequency)
+    }
+    
+    init() {
+        checkMicrophonePermission()
+    }
+    
+    // MARK: - Permission Handling
+    
+    /// Check and request microphone permission
+    private func checkMicrophonePermission() {
+        #if os(macOS)
+        switch AVCaptureDevice.authorizationStatus(for: .audio) {
+        case .authorized:
+            DispatchQueue.main.async {
+                self.permissionGranted = true
+            }
+            setupAudioEngine()
+        case .notDetermined:
+            AVCaptureDevice.requestAccess(for: .audio) { [weak self] granted in
+                DispatchQueue.main.async {
+                    self?.permissionGranted = granted
+                    if granted {
+                        self?.setupAudioEngine()
+                    }
+                }
+            }
+        case .denied, .restricted:
+            DispatchQueue.main.async {
+                self.permissionGranted = false
+            }
+        @unknown default:
+            break
+        }
+        #else
+        // iOS
+        AVAudioApplication.requestRecordPermission { [weak self] granted in
+            DispatchQueue.main.async {
+                self?.permissionGranted = granted
+                if granted {
+                    self?.setupAudioEngine()
+                }
+            }
+        }
+        #endif
+    }
+    
+    // MARK: - Audio Engine Setup
+    
     private func setupAudioEngine() {
         audioEngine = AVAudioEngine()
+        guard let audioEngine = audioEngine else { return }
+        
         inputNode = audioEngine.inputNode
-
+        guard let inputNode = inputNode else { return }
+        
         let format = inputNode.outputFormat(forBus: 0)
-
-        inputNode.installTap(onBus: 0, bufferSize: 8192, format: format) { (buffer, time) in
-            self.processAudioBuffer(buffer: buffer)
+        
+        // Pre-calculate FFT parameters
+        log2n = vDSP_Length(round(log2(Double(TunerConfig.bufferSize))))
+        bufferSizePOT = Int(pow(2, Double(log2n)))
+        
+        // Create FFT setup once and reuse
+        fftSetup = vDSP_create_fftsetup(log2n, FFTRadix(kFFTRadix2))
+        
+        inputNode.installTap(onBus: 0, bufferSize: TunerConfig.bufferSize, format: format) { [weak self] (buffer, time) in
+            self?.processAudioBuffer(buffer: buffer)
         }
+    }
+    
+    // MARK: - Public Control Methods
+    
+    /// Start the audio analysis
+    func start() {
+        guard permissionGranted, let audioEngine = audioEngine, !isRunning else { return }
+        
         do {
             try audioEngine.start()
+            DispatchQueue.main.async {
+                self.isRunning = true
+            }
         } catch {
             print("Error starting audio engine: \(error)")
         }
     }
-
-    deinit {
-        audioEngine.stop()
-        inputNode.removeTap(onBus: 0)
+    
+    /// Stop the audio analysis
+    func stop() {
+        audioEngine?.stop()
+        DispatchQueue.main.async {
+            self.isRunning = false
+            self.frequency = 0.0
+            self.amplitude = 0.0
+        }
     }
     
+    deinit {
+        stop()
+        inputNode?.removeTap(onBus: 0)
+        if let fftSetup = fftSetup {
+            vDSP_destroy_fftsetup(fftSetup)
+        }
+    }
+    
+    // MARK: - Note Detection
+    
+    /// Convert frequency to musical note with octave and cent offset
+    private func frequencyToNote(frequency: Double) -> DetectedNote {
+        guard frequency > 0 else { return .empty }
+        
+        // Calculate MIDI note number from frequency
+        // Formula: midiNote = 69 + 12 * log2(frequency / 440)
+        let midiNote = Double(TunerConfig.referenceMidiNote) + 12.0 * log2(frequency / TunerConfig.referenceFrequency)
+        let roundedNote = Int(round(midiNote))
+        
+        // Handle negative MIDI notes (very low frequencies)
+        let noteIndex = ((roundedNote % 12) + 12) % 12
+        let noteName = TunerConfig.noteNames[noteIndex]
+        
+        // Calculate octave (MIDI note 0 = C-1, so octave = note/12 - 1)
+        let octave = (roundedNote / 12) - 1
+        
+        // Calculate offset in cents (100 cents = 1 semitone)
+        let offset = (midiNote - Double(roundedNote)) * 100.0
+        
+        return DetectedNote(note: noteName, octave: octave, offset: offset, frequency: frequency)
+    }
+    
+    // MARK: - Audio Processing
     
     private func processAudioBuffer(buffer: AVAudioPCMBuffer) {
-        guard let floatChannelData = buffer.floatChannelData else { return }
-        let channelData = floatChannelData.pointee
+        guard let floatChannelData = buffer.floatChannelData,
+              let fftSetup = fftSetup else { return }
         
+        let channelData = floatChannelData.pointee
         let bufferLength = Int(buffer.frameLength)
-        let log2n = vDSP_Length(round(log2(Double(bufferLength))))
-        let bufferSizePOT = Int(pow(2, Double(log2n)))
-
+        
         var realParts = [Float](repeating: 0.0, count: bufferSizePOT)
         var imaginaryParts = [Float](repeating: 0.0, count: bufferSizePOT)
-
-        // Copy input data safely
+        
         let copyCount = min(bufferLength, bufferSizePOT)
         realParts.replaceSubrange(0..<copyCount, with: UnsafeBufferPointer(start: channelData, count: copyCount))
-
-        // Apply Hann window
+        
         let window = vDSP.window(ofType: Float.self, usingSequence: .hanningDenormalized, count: bufferSizePOT, isHalfWindow: false)
         vDSP.multiply(window, realParts, result: &realParts)
-
+        let windowedSamples = Array(realParts.prefix(copyCount))
+        
         realParts.withUnsafeMutableBufferPointer { realBuffer in
             imaginaryParts.withUnsafeMutableBufferPointer { imagBuffer in
                 var splitComplex = DSPSplitComplex(realp: realBuffer.baseAddress!, imagp: imagBuffer.baseAddress!)
-
-                // Setup FFT
-                guard let fftSetup = vDSP_create_fftsetup(log2n, FFTRadix(kFFTRadix2)) else { return }
                 
-                // Perform FFT
                 vDSP_fft_zip(fftSetup, &splitComplex, 1, log2n, FFTDirection(kFFTDirection_Forward))
-
-                // Compute magnitudes
+                
                 var magnitudes = [Float](repeating: 0.0, count: bufferSizePOT / 2)
                 vDSP_zvmags(&splitComplex, 1, &magnitudes, 1, vDSP_Length(bufferSizePOT / 2))
-
-                // Normalize using square root
-                var normalizedMagnitudes = [Float](repeating: 0.0, count: bufferSizePOT / 2)
-                vvsqrtf(&normalizedMagnitudes, magnitudes, [Int32(bufferSizePOT / 2)])
-
-                // Find peak frequency
-                if let maxIndex = normalizedMagnitudes[5...].firstIndex(of: normalizedMagnitudes.max() ?? 0.0) {
-                    let sampleRate = buffer.format.sampleRate
-                    let binWidth = sampleRate / Double(bufferSizePOT)
-
-                    // Use interpolation for better accuracy
-                    let interpolatedIndex = quadraticPeakInterpolation(magnitudes: normalizedMagnitudes, maxIndex: maxIndex)
-                    let detectedFrequency = Double(interpolatedIndex) * binWidth
-
+                
+                let maxMagnitude = magnitudes[5...].max() ?? 0.0
+                
+                DispatchQueue.main.async {
+                    self.amplitude = sqrt(maxMagnitude)
+                }
+                
+                guard maxMagnitude >= TunerConfig.minAmplitude else {
                     DispatchQueue.main.async {
-                        self.frequency = detectedFrequency
+                        self.frequency = 0.0
+                    }
+                    return
+                }
+                
+                guard let maxIndex = magnitudes[5...].firstIndex(of: maxMagnitude) else { return }
+                
+                let sampleRate = buffer.format.sampleRate
+                let binWidth = sampleRate / Double(bufferSizePOT)
+                let interpolatedIndex = logParabolicPeakInterpolation(magnitudes: magnitudes, maxIndex: maxIndex)
+                let roughFrequency = Double(interpolatedIndex) * binWidth
+                
+                let refinedFrequency = refineFrequencyWithAutocorrelation(
+                    samples: windowedSamples,
+                    sampleRate: sampleRate,
+                    roughFrequency: roughFrequency
+                )
+                
+                if refinedFrequency >= TunerConfig.lowFrequencyCutoff &&
+                   refinedFrequency <= TunerConfig.highFrequencyCutoff {
+                    DispatchQueue.main.async {
+                        self.frequency = refinedFrequency
+                    }
+                } else {
+                    DispatchQueue.main.async {
+                        self.frequency = 0.0
                     }
                 }
-
-                vDSP_destroy_fftsetup(fftSetup) // Cleanup
             }
         }
     }
-
     
+    /// Log-magnitude parabolic interpolation for sharper FFT peak location
+    private func logParabolicPeakInterpolation(magnitudes: [Float], maxIndex: Int) -> Float {
+        guard maxIndex > 0, maxIndex < magnitudes.count - 1 else { return Float(maxIndex) }
+        
+        let alpha = Double(max(magnitudes[maxIndex - 1], 1e-12))
+        let beta = Double(max(magnitudes[maxIndex], 1e-12))
+        let gamma = Double(max(magnitudes[maxIndex + 1], 1e-12))
+        
+        let denominator = log(alpha) - 2 * log(beta) + log(gamma)
+        guard abs(denominator) > 1e-12 else { return Float(maxIndex) }
+        
+        let offset = 0.5 * (log(alpha) - log(gamma)) / denominator
+        return Float(maxIndex) + Float(offset)
+    }
     
-
-    func quadraticPeakInterpolation(magnitudes: [Float], maxIndex: Int) -> Float {
+    /// Refine FFT estimate using normalized autocorrelation in the time domain
+    private func refineFrequencyWithAutocorrelation(
+        samples: [Float],
+        sampleRate: Double,
+        roughFrequency: Double
+    ) -> Double {
+        guard roughFrequency > 0, samples.count > 20 else { return roughFrequency }
+        
+        let roughPeriod = sampleRate / roughFrequency
+        let centerLag = Int(round(roughPeriod))
+        let searchRange = max(2, Int(round(roughPeriod * TunerConfig.autocorrelationSearchRatio)))
+        
+        let minLag = max(2, centerLag - searchRange)
+        let maxLag = min(samples.count - 2, centerLag + searchRange)
+        guard minLag < maxLag else { return roughFrequency }
+        
+        var correlations: [(lag: Int, value: Float)] = []
+        correlations.reserveCapacity(maxLag - minLag + 1)
+        
+        for lag in minLag...maxLag {
+            correlations.append((lag, normalizedAutocorrelation(samples: samples, lag: lag)))
+        }
+        
+        guard let peakIndex = correlations.indices.max(by: { correlations[$0].value < correlations[$1].value }),
+              peakIndex > 0,
+              peakIndex < correlations.count - 1 else {
+            return roughFrequency
+        }
+        
+        let left = correlations[peakIndex - 1]
+        let center = correlations[peakIndex]
+        let right = correlations[peakIndex + 1]
+        
+        let refinedLag = parabolicPeakLag(
+            leftLag: left.lag,
+            centerLag: center.lag,
+            rightLag: right.lag,
+            leftValue: Double(left.value),
+            centerValue: Double(center.value),
+            rightValue: Double(right.value)
+        )
+        
+        guard refinedLag > 0 else { return roughFrequency }
+        return sampleRate / refinedLag
+    }
+    
+    private func normalizedAutocorrelation(samples: [Float], lag: Int) -> Float {
+        let count = samples.count - lag
+        guard count > 0 else { return 0 }
+        
+        var sum: Float = 0
+        var energyA: Float = 0
+        var energyB: Float = 0
+        
+        for index in 0..<count {
+            let a = samples[index]
+            let b = samples[index + lag]
+            sum += a * b
+            energyA += a * a
+            energyB += b * b
+        }
+        
+        let normalization = sqrt(energyA * energyB)
+        guard normalization > 0 else { return 0 }
+        return sum / normalization
+    }
+    
+    private func parabolicPeakLag(
+        leftLag: Int,
+        centerLag: Int,
+        rightLag: Int,
+        leftValue: Double,
+        centerValue: Double,
+        rightValue: Double
+    ) -> Double {
+        let denominator = leftValue - 2 * centerValue + rightValue
+        guard abs(denominator) > 1e-12 else { return Double(centerLag) }
+        
+        let offset = 0.5 * (leftValue - rightValue) / denominator
+        return Double(centerLag) + offset
+    }
+    
+    /// Quadratic peak interpolation for more accurate frequency detection
+    /// Uses parabolic interpolation around the peak bin
+    private func quadraticPeakInterpolation(magnitudes: [Float], maxIndex: Int) -> Float {
         let left = maxIndex > 0 ? magnitudes[maxIndex - 1] : 0
         let center = magnitudes[maxIndex]
         let right = maxIndex < magnitudes.count - 1 ? magnitudes[maxIndex + 1] : 0
-
-        let correction = (right - left) / (2 * (2 * center - left - right))
+        
+        let denominator = 2 * (2 * center - left - right)
+        guard denominator != 0 else { return Float(maxIndex) }
+        
+        let correction = (right - left) / denominator
         return Float(maxIndex) + correction
     }
-
 }
