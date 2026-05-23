@@ -73,4 +73,4 @@ Tuning thresholds:
 
 ## License
 
-Copyright © FreeFarmers. All rights reserved.
+This project is licensed under the MIT License — see [LICENSE](LICENSE) for details.
