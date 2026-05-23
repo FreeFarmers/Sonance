@@ -183,63 +183,154 @@ class AudioAnalyzer: ObservableObject {
         let copyCount = min(bufferLength, bufferSizePOT)
         realParts.replaceSubrange(0..<copyCount, with: UnsafeBufferPointer(start: channelData, count: copyCount))
         
-        // Apply Hanning window to reduce spectral leakage
         let window = vDSP.window(ofType: Float.self, usingSequence: .hanningDenormalized, count: bufferSizePOT, isHalfWindow: false)
         vDSP.multiply(window, realParts, result: &realParts)
+        let windowedSamples = Array(realParts.prefix(copyCount))
         
         realParts.withUnsafeMutableBufferPointer { realBuffer in
             imaginaryParts.withUnsafeMutableBufferPointer { imagBuffer in
                 var splitComplex = DSPSplitComplex(realp: realBuffer.baseAddress!, imagp: imagBuffer.baseAddress!)
                 
-                // Perform FFT
                 vDSP_fft_zip(fftSetup, &splitComplex, 1, log2n, FFTDirection(kFFTDirection_Forward))
                 
-                // Calculate magnitudes
                 var magnitudes = [Float](repeating: 0.0, count: bufferSizePOT / 2)
                 vDSP_zvmags(&splitComplex, 1, &magnitudes, 1, vDSP_Length(bufferSizePOT / 2))
                 
-                // Normalize magnitudes
-                var normalizedMagnitudes = [Float](repeating: 0.0, count: bufferSizePOT / 2)
-                vvsqrtf(&normalizedMagnitudes, magnitudes, [Int32(bufferSizePOT / 2)])
+                let maxMagnitude = magnitudes[5...].max() ?? 0.0
                 
-                let maxMagnitude = normalizedMagnitudes.max() ?? 0.0
-                
-                // Update amplitude for UI feedback
                 DispatchQueue.main.async {
-                    self.amplitude = maxMagnitude
+                    self.amplitude = sqrt(maxMagnitude)
                 }
                 
-                // Apply minimum amplitude threshold to ignore noise
-                if maxMagnitude < TunerConfig.minAmplitude {
+                guard maxMagnitude >= TunerConfig.minAmplitude else {
                     DispatchQueue.main.async {
                         self.frequency = 0.0
                     }
                     return
                 }
                 
-                // Find peak frequency (skip first 5 bins to avoid DC offset)
-                if let maxIndex = normalizedMagnitudes[5...].firstIndex(of: maxMagnitude) {
-                    let sampleRate = buffer.format.sampleRate
-                    let binWidth = sampleRate / Double(bufferSizePOT)
-                    
-                    // Use quadratic interpolation for sub-bin accuracy
-                    let interpolatedIndex = quadraticPeakInterpolation(magnitudes: normalizedMagnitudes, maxIndex: maxIndex)
-                    let detectedFrequency = Double(interpolatedIndex) * binWidth
-                    
-                    // Filter out frequencies outside musical range
-                    if detectedFrequency >= TunerConfig.lowFrequencyCutoff &&
-                       detectedFrequency <= TunerConfig.highFrequencyCutoff {
-                        DispatchQueue.main.async {
-                            self.frequency = detectedFrequency
-                        }
-                    } else {
-                        DispatchQueue.main.async {
-                            self.frequency = 0.0
-                        }
+                guard let maxIndex = magnitudes[5...].firstIndex(of: maxMagnitude) else { return }
+                
+                let sampleRate = buffer.format.sampleRate
+                let binWidth = sampleRate / Double(bufferSizePOT)
+                let interpolatedIndex = logParabolicPeakInterpolation(magnitudes: magnitudes, maxIndex: maxIndex)
+                let roughFrequency = Double(interpolatedIndex) * binWidth
+                
+                let refinedFrequency = refineFrequencyWithAutocorrelation(
+                    samples: windowedSamples,
+                    sampleRate: sampleRate,
+                    roughFrequency: roughFrequency
+                )
+                
+                if refinedFrequency >= TunerConfig.lowFrequencyCutoff &&
+                   refinedFrequency <= TunerConfig.highFrequencyCutoff {
+                    DispatchQueue.main.async {
+                        self.frequency = refinedFrequency
+                    }
+                } else {
+                    DispatchQueue.main.async {
+                        self.frequency = 0.0
                     }
                 }
             }
         }
+    }
+    
+    /// Log-magnitude parabolic interpolation for sharper FFT peak location
+    private func logParabolicPeakInterpolation(magnitudes: [Float], maxIndex: Int) -> Float {
+        guard maxIndex > 0, maxIndex < magnitudes.count - 1 else { return Float(maxIndex) }
+        
+        let alpha = Double(max(magnitudes[maxIndex - 1], 1e-12))
+        let beta = Double(max(magnitudes[maxIndex], 1e-12))
+        let gamma = Double(max(magnitudes[maxIndex + 1], 1e-12))
+        
+        let denominator = log(alpha) - 2 * log(beta) + log(gamma)
+        guard abs(denominator) > 1e-12 else { return Float(maxIndex) }
+        
+        let offset = 0.5 * (log(alpha) - log(gamma)) / denominator
+        return Float(maxIndex) + Float(offset)
+    }
+    
+    /// Refine FFT estimate using normalized autocorrelation in the time domain
+    private func refineFrequencyWithAutocorrelation(
+        samples: [Float],
+        sampleRate: Double,
+        roughFrequency: Double
+    ) -> Double {
+        guard roughFrequency > 0, samples.count > 20 else { return roughFrequency }
+        
+        let roughPeriod = sampleRate / roughFrequency
+        let centerLag = Int(round(roughPeriod))
+        let searchRange = max(2, Int(round(roughPeriod * TunerConfig.autocorrelationSearchRatio)))
+        
+        let minLag = max(2, centerLag - searchRange)
+        let maxLag = min(samples.count - 2, centerLag + searchRange)
+        guard minLag < maxLag else { return roughFrequency }
+        
+        var correlations: [(lag: Int, value: Float)] = []
+        correlations.reserveCapacity(maxLag - minLag + 1)
+        
+        for lag in minLag...maxLag {
+            correlations.append((lag, normalizedAutocorrelation(samples: samples, lag: lag)))
+        }
+        
+        guard let peakIndex = correlations.indices.max(by: { correlations[$0].value < correlations[$1].value }),
+              peakIndex > 0,
+              peakIndex < correlations.count - 1 else {
+            return roughFrequency
+        }
+        
+        let left = correlations[peakIndex - 1]
+        let center = correlations[peakIndex]
+        let right = correlations[peakIndex + 1]
+        
+        let refinedLag = parabolicPeakLag(
+            leftLag: left.lag,
+            centerLag: center.lag,
+            rightLag: right.lag,
+            leftValue: Double(left.value),
+            centerValue: Double(center.value),
+            rightValue: Double(right.value)
+        )
+        
+        guard refinedLag > 0 else { return roughFrequency }
+        return sampleRate / refinedLag
+    }
+    
+    private func normalizedAutocorrelation(samples: [Float], lag: Int) -> Float {
+        let count = samples.count - lag
+        guard count > 0 else { return 0 }
+        
+        var sum: Float = 0
+        var energyA: Float = 0
+        var energyB: Float = 0
+        
+        for index in 0..<count {
+            let a = samples[index]
+            let b = samples[index + lag]
+            sum += a * b
+            energyA += a * a
+            energyB += b * b
+        }
+        
+        let normalization = sqrt(energyA * energyB)
+        guard normalization > 0 else { return 0 }
+        return sum / normalization
+    }
+    
+    private func parabolicPeakLag(
+        leftLag: Int,
+        centerLag: Int,
+        rightLag: Int,
+        leftValue: Double,
+        centerValue: Double,
+        rightValue: Double
+    ) -> Double {
+        let denominator = leftValue - 2 * centerValue + rightValue
+        guard abs(denominator) > 1e-12 else { return Double(centerLag) }
+        
+        let offset = 0.5 * (leftValue - rightValue) / denominator
+        return Double(centerLag) + offset
     }
     
     /// Quadratic peak interpolation for more accurate frequency detection

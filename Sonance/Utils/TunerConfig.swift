@@ -23,6 +23,9 @@ enum TunerConfig {
     /// High frequency cutoff in Hz (~C8, highest practical note)
     static let highFrequencyCutoff: Double = 4200.0
     
+    /// Search window for autocorrelation refinement (±% of estimated period)
+    static let autocorrelationSearchRatio: Double = 0.05
+    
     /// Reference frequency for A4 in Hz (standard tuning)
     static let referenceFrequency: Double = 440.0
     
