@@ -54,6 +54,7 @@ struct TunerView: View {
                         
                         // Note display
                         noteDisplayView
+                        .padding(.bottom, 50)
                         
                         // Tuner gauge
                         tunerGaugeView(geometry: geometry)
@@ -81,6 +82,8 @@ struct TunerView: View {
         .onDisappear {
             audioAnalyzer.stop()
         }
+        .ignoresSafeArea()
+
     }
     
     // MARK: - Subviews
