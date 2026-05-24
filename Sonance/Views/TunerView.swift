@@ -65,6 +65,10 @@ struct TunerView: View {
                         // Frequency display
                         frequencyDisplayView
                         
+                        inputSensitivityView
+                            .padding(.horizontal, 32)
+                            .padding(.top, 8)
+                        
                         Spacer()
                         
                         // Control button
@@ -217,6 +221,63 @@ struct TunerView: View {
                     .foregroundStyle(Color.white.opacity(0.4))
             }
         }
+    }
+    
+    private var inputSensitivityView: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Label("Input Sensitivity", systemImage: "waveform")
+                    .font(.system(size: 14, weight: .semibold, design: .rounded))
+                    .foregroundStyle(Color.white.opacity(0.9))
+                
+                Spacer()
+                
+                Text(audioAnalyzer.isSignalAboveThreshold ? "Signal detected" : "Below threshold")
+                    .font(.system(size: 12, weight: .medium, design: .rounded))
+                    .foregroundStyle(Color.white.opacity(audioAnalyzer.isSignalAboveThreshold ? 0.95 : 0.55))
+            }
+            
+            GeometryReader { geometry in
+                let meterMax = TunerConfig.inputMeterMax(for: audioAnalyzer.inputThreshold)
+                let levelWidth = geometry.size.width * CGFloat(min(audioAnalyzer.amplitude / meterMax, 1))
+                let thresholdX = geometry.size.width * CGFloat(min(audioAnalyzer.inputThreshold / meterMax, 1))
+                
+                ZStack(alignment: .leading) {
+                    Capsule()
+                        .fill(Color.white.opacity(0.18))
+                    
+                    Capsule()
+                        .fill(Color.white.opacity(audioAnalyzer.isSignalAboveThreshold ? 0.95 : 0.55))
+                        .frame(width: max(levelWidth, audioAnalyzer.amplitude > 0 ? 4 : 0))
+                        .animation(.easeOut(duration: 0.08), value: audioAnalyzer.amplitude)
+                    
+                    Rectangle()
+                        .fill(Color.white)
+                        .frame(width: 2, height: 18)
+                        .offset(x: max(thresholdX - 1, 0))
+                }
+            }
+            .frame(height: 10)
+            
+            Slider(
+                value: $audioAnalyzer.inputSensitivity,
+                in: 0...1
+            ) {
+                Text("Input Sensitivity")
+            } minimumValueLabel: {
+                Text("Less")
+                    .font(.system(size: 11, weight: .medium, design: .rounded))
+                    .foregroundStyle(Color.white.opacity(0.65))
+            } maximumValueLabel: {
+                Text("More")
+                    .font(.system(size: 11, weight: .medium, design: .rounded))
+                    .foregroundStyle(Color.white.opacity(0.65))
+            }
+            .tint(Color.white)
+        }
+        .padding(14)
+        .background(Color.black.opacity(0.18))
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
     
     private var controlButtonView: some View {

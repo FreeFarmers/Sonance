@@ -34,17 +34,56 @@ class AudioAnalyzer: ObservableObject {
     private var log2n: vDSP_Length = 0
     private var bufferSizePOT: Int = 0
     
+    private var currentMinAmplitude: Float = TunerConfig.minAmplitude(for: TunerConfig.defaultInputSensitivity)
+    private var currentInputGain: Float = TunerConfig.inputGain(for: TunerConfig.defaultInputSensitivity)
+    private var aboveThresholdCount = 0
+    private var lastUIUpdateTime: TimeInterval = 0
+    private var pendingAmplitude: Float = 0
+    private var pendingFrequency: Double = 0
+    
     @Published var frequency: Double = 0.0
     @Published var isRunning: Bool = false
     @Published var permissionGranted: Bool = false
     @Published var amplitude: Float = 0.0
+    @Published var inputSensitivity: Double = TunerConfig.defaultInputSensitivity {
+        didSet {
+            let clamped = min(max(inputSensitivity, 0), 1)
+            if clamped != inputSensitivity {
+                inputSensitivity = clamped
+                return
+            }
+            updateInputSettings(for: clamped)
+            UserDefaults.standard.set(clamped, forKey: Self.inputSensitivityKey)
+        }
+    }
+    
+    var inputThreshold: Float {
+        currentMinAmplitude
+    }
+    
+    var isSignalAboveThreshold: Bool {
+        amplitude >= currentMinAmplitude
+    }
+    
+    private static let inputSensitivityKey = "inputSensitivity"
     
     var detectedNote: DetectedNote {
         return frequencyToNote(frequency: frequency)
     }
     
     init() {
+        if UserDefaults.standard.object(forKey: Self.inputSensitivityKey) != nil {
+            let saved = UserDefaults.standard.double(forKey: Self.inputSensitivityKey)
+            inputSensitivity = min(max(saved, 0), 1)
+        }
+        updateInputSettings(for: inputSensitivity)
         checkMicrophonePermission()
+    }
+    
+    private func updateInputSettings(for sensitivity: Double) {
+        currentMinAmplitude = TunerConfig.minAmplitude(for: sensitivity)
+        currentInputGain = TunerConfig.inputGain(for: sensitivity)
+        aboveThresholdCount = 0
     }
     
     // MARK: - Permission Handling
@@ -129,6 +168,7 @@ class AudioAnalyzer: ObservableObject {
     /// Stop the audio analysis
     func stop() {
         audioEngine?.stop()
+        aboveThresholdCount = 0
         DispatchQueue.main.async {
             self.isRunning = false
             self.frequency = 0.0
@@ -183,6 +223,11 @@ class AudioAnalyzer: ObservableObject {
         let copyCount = min(bufferLength, bufferSizePOT)
         realParts.replaceSubrange(0..<copyCount, with: UnsafeBufferPointer(start: channelData, count: copyCount))
         
+        if currentInputGain != 1 {
+            var gain = currentInputGain
+            vDSP_vsmul(realParts, 1, &gain, &realParts, 1, vDSP_Length(bufferSizePOT))
+        }
+        
         let window = vDSP.window(ofType: Float.self, usingSequence: .hanningDenormalized, count: bufferSizePOT, isHalfWindow: false)
         vDSP.multiply(window, realParts, result: &realParts)
         let windowedSamples = Array(realParts.prefix(copyCount))
@@ -197,19 +242,23 @@ class AudioAnalyzer: ObservableObject {
                 vDSP_zvmags(&splitComplex, 1, &magnitudes, 1, vDSP_Length(bufferSizePOT / 2))
                 
                 let maxMagnitude = magnitudes[5...].max() ?? 0.0
+                let displayAmplitude = sqrt(maxMagnitude)
                 
-                DispatchQueue.main.async {
-                    self.amplitude = sqrt(maxMagnitude)
+                if maxMagnitude >= currentMinAmplitude {
+                    aboveThresholdCount += 1
+                } else {
+                    aboveThresholdCount = 0
                 }
                 
-                guard maxMagnitude >= TunerConfig.minAmplitude else {
-                    DispatchQueue.main.async {
-                        self.frequency = 0.0
-                    }
+                guard aboveThresholdCount >= TunerConfig.signalHoldBuffers else {
+                    deliverResults(amplitude: displayAmplitude, frequency: 0)
                     return
                 }
                 
-                guard let maxIndex = magnitudes[5...].firstIndex(of: maxMagnitude) else { return }
+                guard let maxIndex = magnitudes[5...].firstIndex(of: maxMagnitude) else {
+                    deliverResults(amplitude: displayAmplitude, frequency: 0)
+                    return
+                }
                 
                 let sampleRate = buffer.format.sampleRate
                 let binWidth = sampleRate / Double(bufferSizePOT)
@@ -224,15 +273,29 @@ class AudioAnalyzer: ObservableObject {
                 
                 if refinedFrequency >= TunerConfig.lowFrequencyCutoff &&
                    refinedFrequency <= TunerConfig.highFrequencyCutoff {
-                    DispatchQueue.main.async {
-                        self.frequency = refinedFrequency
-                    }
+                    deliverResults(amplitude: displayAmplitude, frequency: refinedFrequency)
                 } else {
-                    DispatchQueue.main.async {
-                        self.frequency = 0.0
-                    }
+                    deliverResults(amplitude: displayAmplitude, frequency: 0)
                 }
             }
+        }
+    }
+    
+    private func deliverResults(amplitude: Float, frequency: Double) {
+        pendingAmplitude = amplitude
+        pendingFrequency = frequency
+        
+        let now = CACurrentMediaTime()
+        guard now - lastUIUpdateTime >= TunerConfig.uiUpdateInterval else { return }
+        
+        lastUIUpdateTime = now
+        let amplitudeToPublish = pendingAmplitude
+        let frequencyToPublish = pendingFrequency
+        
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.amplitude = amplitudeToPublish
+            self.frequency = frequencyToPublish
         }
     }
     
