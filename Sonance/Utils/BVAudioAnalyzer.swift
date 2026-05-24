@@ -36,6 +36,7 @@ class AudioAnalyzer: ObservableObject {
     
     private var currentMinAmplitude: Float = TunerConfig.minAmplitude(for: TunerConfig.defaultInputSensitivity)
     private var currentInputGain: Float = TunerConfig.inputGain(for: TunerConfig.defaultInputSensitivity)
+    private var currentPeakProminence: Float = TunerConfig.peakProminenceThreshold(for: TunerConfig.defaultInputSensitivity)
     private var aboveThresholdCount = 0
     private var lastUIUpdateTime: TimeInterval = 0
     private var pendingAmplitude: Float = 0
@@ -65,7 +66,7 @@ class AudioAnalyzer: ObservableObject {
         amplitude >= currentMinAmplitude
     }
     
-    private static let inputSensitivityKey = "inputSensitivity"
+    private static let inputSensitivityKey = "inputSensitivityV2"
     
     var detectedNote: DetectedNote {
         return frequencyToNote(frequency: frequency)
@@ -83,6 +84,7 @@ class AudioAnalyzer: ObservableObject {
     private func updateInputSettings(for sensitivity: Double) {
         currentMinAmplitude = TunerConfig.minAmplitude(for: sensitivity)
         currentInputGain = TunerConfig.inputGain(for: sensitivity)
+        currentPeakProminence = TunerConfig.peakProminenceThreshold(for: sensitivity)
         aboveThresholdCount = 0
     }
     
@@ -156,6 +158,9 @@ class AudioAnalyzer: ObservableObject {
         guard permissionGranted, let audioEngine = audioEngine, !isRunning else { return }
         
         do {
+            #if os(iOS)
+            try configureAudioSession()
+            #endif
             try audioEngine.start()
             DispatchQueue.main.async {
                 self.isRunning = true
@@ -164,6 +169,14 @@ class AudioAnalyzer: ObservableObject {
             print("Error starting audio engine: \(error)")
         }
     }
+    
+    #if os(iOS)
+    private func configureAudioSession() throws {
+        let session = AVAudioSession.sharedInstance()
+        try session.setCategory(.record, mode: .measurement, options: [])
+        try session.setActive(true)
+    }
+    #endif
     
     /// Stop the audio analysis
     func stop() {
@@ -232,6 +245,11 @@ class AudioAnalyzer: ObservableObject {
         vDSP.multiply(window, realParts, result: &realParts)
         let windowedSamples = Array(realParts.prefix(copyCount))
         
+        var signalLevel: Float = 0
+        windowedSamples.withUnsafeBufferPointer { samples in
+            vDSP_rmsqv(samples.baseAddress!, 1, &signalLevel, vDSP_Length(copyCount))
+        }
+        
         realParts.withUnsafeMutableBufferPointer { realBuffer in
             imaginaryParts.withUnsafeMutableBufferPointer { imagBuffer in
                 var splitComplex = DSPSplitComplex(realp: realBuffer.baseAddress!, imagp: imagBuffer.baseAddress!)
@@ -241,22 +259,27 @@ class AudioAnalyzer: ObservableObject {
                 var magnitudes = [Float](repeating: 0.0, count: bufferSizePOT / 2)
                 vDSP_zvmags(&splitComplex, 1, &magnitudes, 1, vDSP_Length(bufferSizePOT / 2))
                 
-                let maxMagnitude = magnitudes[5...].max() ?? 0.0
-                let displayAmplitude = sqrt(maxMagnitude)
+                let spectralSlice = Array(magnitudes[5...])
+                let maxMagnitude = spectralSlice.max() ?? 0.0
+                let medianMagnitude = sortedMedian(spectralSlice)
+                let peakProminence = maxMagnitude / max(medianMagnitude, 1e-12)
                 
-                if maxMagnitude >= currentMinAmplitude {
+                let passesLevel = signalLevel >= currentMinAmplitude
+                let passesProminence = peakProminence >= currentPeakProminence
+                
+                if passesLevel && passesProminence {
                     aboveThresholdCount += 1
                 } else {
                     aboveThresholdCount = 0
                 }
                 
                 guard aboveThresholdCount >= TunerConfig.signalHoldBuffers else {
-                    deliverResults(amplitude: displayAmplitude, frequency: 0)
+                    deliverResults(amplitude: signalLevel, frequency: 0)
                     return
                 }
                 
                 guard let maxIndex = magnitudes[5...].firstIndex(of: maxMagnitude) else {
-                    deliverResults(amplitude: displayAmplitude, frequency: 0)
+                    deliverResults(amplitude: signalLevel, frequency: 0)
                     return
                 }
                 
@@ -273,9 +296,9 @@ class AudioAnalyzer: ObservableObject {
                 
                 if refinedFrequency >= TunerConfig.lowFrequencyCutoff &&
                    refinedFrequency <= TunerConfig.highFrequencyCutoff {
-                    deliverResults(amplitude: displayAmplitude, frequency: refinedFrequency)
+                    deliverResults(amplitude: signalLevel, frequency: refinedFrequency)
                 } else {
-                    deliverResults(amplitude: displayAmplitude, frequency: 0)
+                    deliverResults(amplitude: signalLevel, frequency: 0)
                 }
             }
         }
@@ -297,6 +320,12 @@ class AudioAnalyzer: ObservableObject {
             self.amplitude = amplitudeToPublish
             self.frequency = frequencyToPublish
         }
+    }
+    
+    private func sortedMedian(_ values: [Float]) -> Float {
+        guard !values.isEmpty else { return 0 }
+        let sorted = values.sorted()
+        return sorted[sorted.count / 2]
     }
     
     /// Log-magnitude parabolic interpolation for sharper FFT peak location

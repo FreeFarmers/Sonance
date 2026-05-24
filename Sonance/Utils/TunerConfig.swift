@@ -15,30 +15,30 @@ enum TunerConfig {
     static let bufferSize: AVAudioFrameCount = 8192
     
     /// Default input sensitivity (0 = least sensitive, 1 = most sensitive)
-    static let defaultInputSensitivity: Double = 0.15
+    static let defaultInputSensitivity: Double = 0.84
     
-    /// Minimum amplitude threshold at maximum sensitivity
-    static let minAmplitudeFloor: Float = 0.004
+    /// RMS signal floor at maximum sensitivity
+    static let minAmplitudeFloor: Float = 0.00075
     
-    /// Minimum amplitude threshold at minimum sensitivity
-    static let minAmplitudeCeiling: Float = 0.35
+    /// RMS signal floor at minimum sensitivity
+    static let minAmplitudeCeiling: Float = 0.0195
     
-    /// Input gain at minimum sensitivity (attenuates ambient noise)
-    static let inputGainMin: Float = 0.35
+    /// Input gain at minimum sensitivity
+    static let inputGainMin: Float = 1.36
     
     /// Input gain at maximum sensitivity
-    static let inputGainMax: Float = 2.0
+    static let inputGainMax: Float = 11.2
     
     /// Consecutive buffers above threshold before pitch detection activates
-    static let signalHoldBuffers: Int = 3
+    static let signalHoldBuffers: Int = 1
     
     /// Minimum interval between UI updates from the audio thread
     static let uiUpdateInterval: TimeInterval = 1.0 / 30.0
     
-    /// Maps sensitivity to the amplitude threshold required for detection
+    /// Maps sensitivity to the RMS level required for detection
     static func minAmplitude(for sensitivity: Double) -> Float {
         let clamped = Float(min(max(sensitivity, 0), 1))
-        let strictness = pow(1 - clamped, 2.2)
+        let strictness = pow(1 - clamped, 0.5)
         return minAmplitudeFloor + strictness * (minAmplitudeCeiling - minAmplitudeFloor)
     }
     
@@ -48,9 +48,16 @@ enum TunerConfig {
         return inputGainMin + clamped * (inputGainMax - inputGainMin)
     }
     
-    /// Dynamic meter scale so the threshold marker stays meaningful
+    /// Peak must stand this many times above the spectral median
+    static func peakProminenceThreshold(for sensitivity: Double) -> Float {
+        let clamped = Float(min(max(sensitivity, 0), 1))
+        let strictness = pow(1 - clamped, 0.32)
+        return 0.375 + strictness * 1.65
+    }
+    
+    /// Fixed meter headroom above the threshold marker
     static func inputMeterMax(for threshold: Float) -> Float {
-        max(threshold * 2.5, 0.1)
+        max(threshold + 0.06, 0.1)
     }
     
     /// Low frequency cutoff in Hz (below this is likely noise)
